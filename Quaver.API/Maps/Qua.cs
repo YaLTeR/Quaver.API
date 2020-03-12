@@ -569,7 +569,7 @@ namespace Quaver.API.Maps
                 // We take a log of the multiplier because we care about the ratio to 1.0× rather than the value.
                 // So 0.1× and 10× should count the same as they are both 10 times off 1.0×.
                 // Note also that a multiplier of 1.0× will return 0 as log(1) = 0.
-                return Math.Abs(Math.Log(multiplier)) * (duration / 1000); // This 1000 is just to make the values a little saner.
+                return Math.Abs(Math.Log(multiplier)) * Math.Log(duration / 1000 + 1); // This 1000 is just to make the values a little saner.
             });
 
             // The InitialScrollVelocity is not counted as the player has all the time to adjust to it.
