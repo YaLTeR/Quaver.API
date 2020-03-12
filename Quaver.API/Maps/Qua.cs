@@ -558,10 +558,24 @@ namespace Quaver.API.Maps
             importantTimestamps.Sort();
             var nextImportantTimestampIndex = 0;
 
-            var sum = 0d;
-            for (var i = 1; i < qua.SliderVelocities.Count; i++)
+            var svFactor = new Func<float, float, double>((multiplier, duration) =>
             {
-                var prevSv = qua.SliderVelocities[i - 1];
+                multiplier = Math.Abs(multiplier);
+
+                // The multiplier is capped mainly to keep log from spiraling out of control.
+                // It makes sense because you can't tell the SV changes past a certain amount.
+                multiplier = Math.Min(Math.Max(multiplier, MIN_MULTIPLIER), MAX_MULTIPLIER);
+
+                // We take a log of the multiplier because we care about the ratio to 1.0× rather than the value.
+                // So 0.1× and 10× should count the same as they are both 10 times off 1.0×.
+                // Note also that a multiplier of 1.0× will return 0 as log(1) = 0.
+                return Math.Abs(Math.Log(multiplier)) * (duration / 1000); // This 1000 is just to make the values a little saner.
+            });
+
+            // The InitialScrollVelocity is not counted as the player has all the time to adjust to it.
+            var sum = 0d;
+            for (var i = 0; i < qua.SliderVelocities.Count; i++)
+            {
                 var sv = qua.SliderVelocities[i];
 
                 // Find the first important timestamp after the SV.
@@ -575,16 +589,9 @@ namespace Quaver.API.Maps
                     importantTimestamps[nextImportantTimestampIndex] > sv.StartTime + 1000)
                     continue;
 
-                var prevMultiplier = Math.Min(Math.Max(Math.Abs(prevSv.Multiplier), MIN_MULTIPLIER), MAX_MULTIPLIER);
-                var multiplier = Math.Min(Math.Max(Math.Abs(sv.Multiplier), MIN_MULTIPLIER), MAX_MULTIPLIER);
-
-                // The difference between SV multipliers is computed under a log, because it matters that the SV multiplier
-                // changed, for example, ten-fold (from 0.1× to 1× or from 1× to 10×), and not that it changed _by_ some value (e.g. by 0.9 or by 9).
-                var prevLogMultiplier = Math.Log(prevMultiplier);
-                var logMultiplier = Math.Log(multiplier);
-
-                var difference = Math.Abs(logMultiplier - prevLogMultiplier);
-                sum += difference;
+                var end = (i == qua.SliderVelocities.Count) ? Length : qua.SliderVelocities[i + 1].StartTime;
+                var duration = end - sv.StartTime;
+                sum += svFactor(sv.Multiplier, duration);
             }
 
             return sum;
