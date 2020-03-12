@@ -558,18 +558,30 @@ namespace Quaver.API.Maps
             importantTimestamps.Sort();
             var nextImportantTimestampIndex = 0;
 
-            var svFactor = new Func<float, float, double>((multiplier, duration) =>
+            var svFactor = new Func<float, float, float, double>((multiplier, prevMultiplier, duration) =>
             {
+                // If the SV changes sign, difference of absolute SV values won't give the correct result, so it's special-cased.
+                var differentSigns = (multiplier * prevMultiplier) < 0;
+
                 multiplier = Math.Abs(multiplier);
+                prevMultiplier = Math.Abs(prevMultiplier);
 
                 // The multiplier is capped mainly to keep log from spiraling out of control.
                 // It makes sense because you can't tell the SV changes past a certain amount.
                 multiplier = Math.Min(Math.Max(multiplier, MIN_MULTIPLIER), MAX_MULTIPLIER);
+                prevMultiplier = Math.Min(Math.Max(prevMultiplier, MIN_MULTIPLIER), MAX_MULTIPLIER);
 
-                // We take a log of the multiplier because we care about the ratio to 1.0× rather than the value.
-                // So 0.1× and 10× should count the same as they are both 10 times off 1.0×.
-                // Note also that a multiplier of 1.0× will return 0 as log(1) = 0.
-                return Math.Abs(Math.Log(multiplier)) * Math.Log(duration / 1000 + 1); // This 1000 is just to make the values a little saner.
+                // The difference between SV multipliers is computed under a log, because it matters that the SV multiplier
+                // changed, for example, ten-fold (from 0.1× to 1× or from 1× to 10×), and not that it changed _by_ some value (e.g. by 0.9 or by 9).
+                var logMultiplier = Math.Log(multiplier);
+                var prevLogMultiplier = Math.Log(prevMultiplier);
+
+                var difference = Math.Abs(logMultiplier - prevLogMultiplier);
+                if (differentSigns)
+                    // If the SV changes sign, use the same difference as if the SV changed to or from zero.
+                    difference = Math.Max(logMultiplier, prevLogMultiplier) - Math.Log(MIN_MULTIPLIER);
+
+                return difference * Math.Log(duration / 1000 + 1); // This 1000 is just to make the values a little saner.
             });
 
             // The InitialScrollVelocity is not counted as the player has all the time to adjust to it.
@@ -589,9 +601,12 @@ namespace Quaver.API.Maps
                     importantTimestamps[nextImportantTimestampIndex] > sv.StartTime + 1000)
                     continue;
 
+                var prevMultiplier = (i == 0) ? qua.InitialScrollVelocity : qua.SliderVelocities[i - 1].Multiplier;
+
                 var end = (i == qua.SliderVelocities.Count) ? Length : qua.SliderVelocities[i + 1].StartTime;
                 var duration = end - sv.StartTime;
-                sum += svFactor(sv.Multiplier, duration);
+
+                sum += svFactor(sv.Multiplier, prevMultiplier, duration);
             }
 
             return sum;
